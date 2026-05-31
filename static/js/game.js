@@ -28,6 +28,9 @@ let temperature = 0.0;
 let showHeatmap = true;
 let aiThinking = false;
 let currentHeatmapData = null;
+let userPrefersThoughtsOpen = false; // Persistent user choice to show/hide the drawer
+let analysisMode = false; // true if player is analyzing board without AI moving
+let currentReplayIndex = -1; // -1 means active live game, otherwise index of reviewed move
 
 // DOM Elements
 const boardGrid = document.getElementById('chessboard');
@@ -49,6 +52,10 @@ const modalOverlay = document.getElementById('game-over-modal');
 const modalTitle = document.getElementById('modal-title');
 const modalDesc = document.getElementById('modal-desc');
 const btnModalRestart = document.getElementById('btn-modal-restart');
+const btnModalCopyFen = document.getElementById('btn-modal-copy-fen');
+const btnModalCopyPgn = document.getElementById('btn-modal-copy-pgn');
+const btnModalAnalyze = document.getElementById('btn-modal-analyze');
+const btnModalDownloadPgn = document.getElementById('btn-modal-download-pgn');
 
 // Action Buttons
 const btnUndo = document.getElementById('btn-undo');
@@ -130,6 +137,8 @@ function startNewGame() {
     game = new Chess();
     selectedSquare = null;
     currentHeatmapData = null;
+    analysisMode = false;
+    currentReplayIndex = -1;
     clearHighlights();
     updateBoardPieces();
     updateMoveHistory();
@@ -145,7 +154,8 @@ function startNewGame() {
 }
 
 // Render actual pieces on the board based on chess.js state
-function updateBoardPieces() {
+function updateBoardPieces(customGame) {
+    if (!customGame) customGame = game;
     // Clear all pieces
     document.querySelectorAll('.square').forEach(sq => {
         const piece = sq.querySelector('.chess-piece');
@@ -153,7 +163,7 @@ function updateBoardPieces() {
     });
     
     // Loop through chess.js board representation
-    const boardState = game.board(); // 8x8 nested array of pieces
+    const boardState = customGame.board(); // 8x8 nested array of pieces
     for (let r = 0; r < 8; r++) {
         for (let c = 0; c < 8; c++) {
             const piece = boardState[r][c];
@@ -172,17 +182,32 @@ function updateBoardPieces() {
 
 // Handle clicking on squares
 function handleSquareClick(sqIndex) {
-    if (aiThinking || game.game_over()) return;
+    if (aiThinking) return;
+    
+    // If game is over and NOT in analysisMode, block moves
+    if (game.game_over() && !analysisMode && currentReplayIndex === -1) return;
+    
+    // Determine active game state (either replayed past state or live state)
+    let activeGame = game;
+    if (currentReplayIndex !== -1) {
+        activeGame = new Chess();
+        const history = game.history({ verbose: true });
+        for (let i = 0; i <= currentReplayIndex; i++) {
+            activeGame.move(history[i]);
+        }
+    }
     
     // Check if player turn matches current board turn
-    const turn = game.turn();
+    const turn = activeGame.turn();
     const isWhiteTurn = turn === 'w';
     
-    if (gameMode === 'ai-vs-ai') return;
-    if (gameMode === 'player-vs-ai-black' && !isWhiteTurn) return;
-    if (gameMode === 'player-vs-ai-white' && isWhiteTurn) return;
+    if (!analysisMode && currentReplayIndex === -1) {
+        if (gameMode === 'ai-vs-ai') return;
+        if (gameMode === 'player-vs-ai-black' && !isWhiteTurn) return;
+        if (gameMode === 'player-vs-ai-white' && isWhiteTurn) return;
+    }
     
-    const clickedPiece = game.get(squareIdxToUci(sqIndex));
+    const clickedPiece = activeGame.get(squareIdxToUci(sqIndex));
     
     // 1. If clicking our own piece, select it and show hints
     if (clickedPiece && clickedPiece.color === turn) {
@@ -192,10 +217,11 @@ function handleSquareClick(sqIndex) {
         const sqEl = document.getElementById(`sq-${sqIndex}`);
         sqEl.classList.add('selected');
         
-        showLegalMoveHints(sqIndex);
+        // Show legal hints based on active replayed game
+        showLegalMoveHintsForGame(sqIndex, activeGame);
         
-        // Highlight destination probabilities in heatmap specifically for this piece
-        if (currentHeatmapData && showHeatmap) {
+        // Highlight destination probabilities in heatmap specifically for this piece (only if not replaying)
+        if (currentHeatmapData && showHeatmap && currentReplayIndex === -1) {
             renderHeatmapForSelectedPiece(sqIndex);
         }
         return;
@@ -206,11 +232,18 @@ function handleSquareClick(sqIndex) {
         const fromUci = squareIdxToUci(selectedSquare);
         const toUci = squareIdxToUci(sqIndex);
         
-        // Check if move is legal
-        const moves = game.moves({ square: fromUci, verbose: true });
+        // Check if move is legal on the active board
+        const moves = activeGame.moves({ square: fromUci, verbose: true });
         const legalMove = moves.find(m => m.to === toUci);
         
         if (legalMove) {
+            // If we were replaying a past position, truncate the main game history to this point!
+            if (currentReplayIndex !== -1) {
+                game = activeGame; // Truncate and commit history up to reviewed move
+                currentReplayIndex = -1;
+                analysisMode = true; // Engage self-analysis on the new branch
+            }
+            
             // Executing standard move
             let moveObj = {
                 from: fromUci,
@@ -233,25 +266,34 @@ function handleSquareClick(sqIndex) {
             
             // Check if game is over or hand over to AI
             if (game.game_over()) {
-                handleGameOver();
+                if (!analysisMode) {
+                    handleGameOver();
+                } else {
+                    statusMessage.textContent = "Checkmate or Draw reached in Self Analysis.";
+                    statusIcon.setAttribute('data-lucide', 'award');
+                    lucide.createIcons();
+                }
             } else {
-                checkAITurn();
+                if (!analysisMode) {
+                    checkAITurn();
+                }
             }
         } else {
             // Clicked an invalid/empty square, deselect
             selectedSquare = null;
             clearHighlights();
-            if (currentHeatmapData && showHeatmap) {
+            if (currentHeatmapData && showHeatmap && currentReplayIndex === -1) {
                 renderHeatmapCumulative();
             }
         }
     }
 }
 
-// Draw subtle glowing dots on legal squares
-function showLegalMoveHints(sqIndex) {
+// Draw subtle glowing dots on legal squares for a specific game instance
+function showLegalMoveHintsForGame(sqIndex, customGame) {
+    if (!customGame) customGame = game;
     const fromUci = squareIdxToUci(sqIndex);
-    const legalMoves = game.moves({ square: fromUci, verbose: true });
+    const legalMoves = customGame.moves({ square: fromUci, verbose: true });
     
     legalMoves.forEach(m => {
         const targetIdx = uciToSquareIdx(m.to);
@@ -286,7 +328,7 @@ function clearHighlights() {
 
 // Trigger AI step if it matches current turn conditions
 function checkAITurn() {
-    if (game.game_over()) return;
+    if (analysisMode || game.game_over()) return;
     
     const turn = game.turn();
     const isAITurn = 
@@ -590,11 +632,22 @@ function renderAIThinkingProcess(data) {
         thinkingTableBody.appendChild(row);
     });
     
-    // Automatically pop open the drawer if it's currently shut, to show the calculations
-    if (!thinkingDrawer.classList.contains('show')) {
-        thinkingDrawer.classList.add('show');
+    // Automatically pop open the drawer ONLY if the user prefers it to be open
+    if (userPrefersThoughtsOpen) {
+        if (!thinkingDrawer.classList.contains('show')) {
+            thinkingDrawer.classList.add('show');
+        }
         if (btnToggleThoughts) {
             btnToggleThoughts.innerHTML = '<i data-lucide="eye-off"></i> Hide AI Thoughts';
+            lucide.createIcons();
+        }
+    } else {
+        // Keep it closed
+        if (thinkingDrawer.classList.contains('show')) {
+            thinkingDrawer.classList.remove('show');
+        }
+        if (btnToggleThoughts) {
+            btnToggleThoughts.innerHTML = '<i data-lucide="brain"></i> Show AI Thoughts';
             lucide.createIcons();
         }
     }
@@ -707,6 +760,15 @@ function updateStatusMessage() {
     if (aiThinking) {
         statusMessage.textContent = "Mimic Neural Net is thinking... Running PyTorch GPU/CPU inference.";
         statusIcon.setAttribute('data-lucide', 'brain');
+    } else if (analysisMode) {
+        statusIcon.setAttribute('data-lucide', 'brain-circuit');
+        if (game.game_over()) {
+            statusMessage.textContent = "Match concluded in Self Analysis. Click 'Reset' to play a new game!";
+        } else {
+            const turn = game.turn();
+            const turnName = turn === 'w' ? 'White' : 'Black';
+            statusMessage.textContent = `Self Analysis Active: Play moves for both sides freely. Current turn: ${turnName}`;
+        }
     } else if (game.game_over()) {
         statusIcon.setAttribute('data-lucide', 'trophy');
         if (game.in_checkmate()) {
@@ -856,6 +918,7 @@ function setupEventListeners() {
         btnToggleThoughts.addEventListener('click', () => {
             thinkingDrawer.classList.toggle('show');
             const isOpen = thinkingDrawer.classList.contains('show');
+            userPrefersThoughtsOpen = isOpen; // Record user preference
             btnToggleThoughts.innerHTML = isOpen 
                 ? '<i data-lucide="eye-off"></i> Hide AI Thoughts'
                 : '<i data-lucide="brain"></i> Show AI Thoughts';
@@ -866,6 +929,7 @@ function setupEventListeners() {
     if (btnCloseDrawer) {
         btnCloseDrawer.addEventListener('click', () => {
             thinkingDrawer.classList.remove('show');
+            userPrefersThoughtsOpen = false; // Record user preference (closed)
             if (btnToggleThoughts) {
                 btnToggleThoughts.innerHTML = '<i data-lucide="brain"></i> Show AI Thoughts';
                 lucide.createIcons();
@@ -915,9 +979,73 @@ function setupEventListeners() {
         });
     });
     
-    btnModalRestart.addEventListener('click', () => {
-        startNewGame();
-    });
+    if (btnModalRestart) {
+        btnModalRestart.addEventListener('click', () => {
+            startNewGame();
+        });
+    }
+    
+    if (btnModalAnalyze) {
+        btnModalAnalyze.addEventListener('click', () => {
+            modalOverlay.style.display = 'none';
+            analysisMode = true;
+            currentReplayIndex = -1;
+            updateStatusMessage();
+        });
+    }
+    
+    if (btnModalCopyFen) {
+        btnModalCopyFen.addEventListener('click', () => {
+            const fen = game.fen();
+            navigator.clipboard.writeText(fen).then(() => {
+                const originalText = btnModalCopyFen.innerHTML;
+                btnModalCopyFen.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;margin-right:3px;display:inline-block;vertical-align:middle;"></i>Copied!';
+                lucide.createIcons();
+                setTimeout(() => {
+                    btnModalCopyFen.innerHTML = originalText;
+                    lucide.createIcons();
+                }, 2000);
+            });
+        });
+    }
+    
+    if (btnModalCopyPgn) {
+        btnModalCopyPgn.addEventListener('click', () => {
+            const pgn = game.pgn();
+            navigator.clipboard.writeText(pgn).then(() => {
+                const originalText = btnModalCopyPgn.innerHTML;
+                btnModalCopyPgn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;margin-right:3px;display:inline-block;vertical-align:middle;"></i>Copied!';
+                lucide.createIcons();
+                setTimeout(() => {
+                    btnModalCopyPgn.innerHTML = originalText;
+                    lucide.createIcons();
+                }, 2000);
+            });
+        });
+    }
+    
+    if (btnModalDownloadPgn) {
+        btnModalDownloadPgn.addEventListener('click', () => {
+            const pgn = game.pgn();
+            const blob = new Blob([pgn], { type: 'text/plain;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mimic_game_${new Date().toISOString().slice(0, 10)}.pgn`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            const originalText = btnModalDownloadPgn.innerHTML;
+            btnModalDownloadPgn.innerHTML = '<i data-lucide="check" style="width:12px;height:12px;margin-right:3px;display:inline-block;vertical-align:middle;"></i>Saved!';
+            lucide.createIcons();
+            setTimeout(() => {
+                btnModalDownloadPgn.innerHTML = originalText;
+                lucide.createIcons();
+            }, 2000);
+        });
+    }
     
     // Model Upload Zone Click and Drag
     dropzone.addEventListener('click', () => {
@@ -1072,4 +1200,52 @@ function uciToSquareIdx(uci) {
     const file = uci.charCodeAt(0) - 97; // 'a' -> 0
     const rank = parseInt(uci.charAt(1)) - 1; // '1' -> 0
     return rank * 8 + file;
+}
+
+// Jump board to a specific move index in history for replaying
+window.jumpToMove = function(index) {
+    if (aiThinking) return;
+    
+    const moves = game.history({ verbose: true });
+    if (index < 0 || index >= moves.length) return;
+    
+    currentReplayIndex = index;
+    
+    // Play moves up to index
+    const tempGame = new Chess();
+    for (let i = 0; i <= index; i++) {
+        tempGame.move(moves[i]);
+    }
+    
+    // Display this temporary board state
+    updateBoardPieces(tempGame);
+    
+    // Highlight the active history row visually
+    highlightHistoryRow(index);
+    
+    // Update status feed
+    statusMessage.textContent = `Reviewing move ${index + 1}: ${moves[index].san}. Play a move here to start a new analysis branch!`;
+    statusIcon.setAttribute('data-lucide', 'eye');
+    lucide.createIcons();
+};
+
+// Highlight the selected row in move history and dim others
+function highlightHistoryRow(index) {
+    const rows = document.querySelectorAll('.history-row');
+    rows.forEach((row, idx) => {
+        const whiteMoveSpan = row.querySelector('.history-move:nth-of-type(1)');
+        const blackMoveSpan = row.querySelector('.history-move:nth-of-type(2)');
+        
+        if (whiteMoveSpan) whiteMoveSpan.classList.remove('active-replay');
+        if (blackMoveSpan) blackMoveSpan.classList.remove('active-replay');
+        
+        const whiteIdx = idx * 2;
+        const blackIdx = idx * 2 + 1;
+        
+        if (whiteIdx === index && whiteMoveSpan) {
+            whiteMoveSpan.classList.add('active-replay');
+        } else if (blackIdx === index && blackMoveSpan) {
+            blackMoveSpan.classList.add('active-replay');
+        }
+    });
 }

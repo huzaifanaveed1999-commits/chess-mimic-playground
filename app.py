@@ -24,71 +24,116 @@ STOCKFISH_ENGINE = None
 
 def ensure_stockfish_installed():
     """
-    Checks if Stockfish binary is present locally. If not, downloads the official
-    pre-compiled Windows x86-64-avx2 zip from GitHub and extracts the executable.
+    Checks if Stockfish binary is present locally or in the system PATH.
+    If not, downloads the official pre-compiled AVX2 binary from GitHub
+    (Windows zip or Linux tar.xz) and extracts it locally.
     """
+    import platform
     engines_dir = os.path.join(BASE_DIR, 'engines')
     os.makedirs(engines_dir, exist_ok=True)
-    stockfish_path = os.path.join(engines_dir, 'stockfish.exe')
     
-    if os.path.exists(stockfish_path):
-        print("Stockfish engine found locally.")
+    is_windows = platform.system() == 'Windows'
+    binary_name = 'stockfish.exe' if is_windows else 'stockfish'
+    stockfish_path = os.path.join(engines_dir, binary_name)
+    
+    # 1. First check system-wide path (e.g. if installed via apt-get on Linux)
+    system_stockfish = shutil.which("stockfish")
+    if system_stockfish:
+        print(f"Stockfish engine found globally in system PATH: {system_stockfish}")
         return True
         
-    print("Stockfish engine not found. Initiating automatic download from GitHub...")
+    # 2. Check local engines directory
+    if os.path.exists(stockfish_path):
+        print(f"Stockfish engine found locally at: {stockfish_path}")
+        if not is_windows:
+            os.chmod(stockfish_path, 0o755)
+        return True
+        
+    print("Stockfish engine not found locally or globally. Initiating automatic download...")
     import urllib.request
-    import zipfile
     
-    zip_url = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-windows-x86-64-avx2.zip"
-    temp_zip_path = os.path.join(engines_dir, "stockfish_temp.zip")
-    temp_extract_dir = os.path.join(engines_dir, "temp_extract")
-    
+    if is_windows:
+        zip_url = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-windows-x86-64-avx2.zip"
+        temp_file = os.path.join(engines_dir, "stockfish_temp.zip")
+    else:
+        zip_url = "https://github.com/official-stockfish/Stockfish/releases/latest/download/stockfish-ubuntu-x86-64-avx2.tar.xz"
+        temp_file = os.path.join(engines_dir, "stockfish_temp.tar.xz")
+        
     try:
-        # 1. Download zip with custom User-Agent
-        print(f"Downloading AVX2 Stockfish from {zip_url} ...")
+        print(f"Downloading Stockfish from {zip_url} ...")
         req = urllib.request.Request(
             zip_url, 
             headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         )
-        with urllib.request.urlopen(req) as response, open(temp_zip_path, 'wb') as out_file:
+        with urllib.request.urlopen(req) as response, open(temp_file, 'wb') as out_file:
             shutil.copyfileobj(response, out_file)
             
         print("Download complete. Extracting files...")
         
-        # 2. Extract zip
-        with zipfile.ZipFile(temp_zip_path, 'r') as zip_ref:
-            zip_ref.extractall(temp_extract_dir)
-            
-        # 3. Locate the .exe file recursively
-        found_exe = None
-        for root, dirs, files in os.walk(temp_extract_dir):
-            for file in files:
-                if file.lower().endswith('.exe') and 'stockfish' in file.lower():
-                    found_exe = os.path.join(root, file)
-                    break
-            if found_exe:
-                break
+        if is_windows:
+            import zipfile
+            temp_extract_dir = os.path.join(engines_dir, "temp_extract")
+            with zipfile.ZipFile(temp_file, 'r') as zip_ref:
+                zip_ref.extractall(temp_extract_dir)
                 
-        if found_exe:
-            # Copy to final destination
-            shutil.copy(found_exe, stockfish_path)
-            print(f"Stockfish engine successfully installed at: {stockfish_path}")
-            success = True
+            found_exe = None
+            for root, dirs, files in os.walk(temp_extract_dir):
+                for file in files:
+                    if file.lower().endswith('.exe') and 'stockfish' in file.lower():
+                        found_exe = os.path.join(root, file)
+                        break
+                if found_exe:
+                    break
+                    
+            if found_exe:
+                shutil.copy(found_exe, stockfish_path)
+                print(f"Stockfish engine successfully installed at: {stockfish_path}")
+                success = True
+            else:
+                print("[ERROR] Could not find stockfish.exe within the downloaded zip.")
+                success = False
+                
+            if os.path.exists(temp_extract_dir):
+                shutil.rmtree(temp_extract_dir)
         else:
-            print("[ERROR] Could not find stockfish.exe within the downloaded zip.")
-            success = False
-            
+            import tarfile
+            temp_extract_dir = os.path.join(engines_dir, "temp_extract")
+            with tarfile.open(temp_file, "r:xz") as tar_ref:
+                tar_ref.extractall(temp_extract_dir)
+                
+            found_bin = None
+            for root, dirs, files in os.walk(temp_extract_dir):
+                for file in files:
+                    # Linux binary usually doesn't have an extension
+                    if 'stockfish' in file.lower() and not file.lower().endswith(('.txt', '.md', '.pdf')):
+                        found_bin = os.path.join(root, file)
+                        break
+                if found_bin:
+                    break
+                    
+            if found_bin:
+                shutil.copy(found_bin, stockfish_path)
+                os.chmod(stockfish_path, 0o755)
+                print(f"Stockfish engine successfully installed at: {stockfish_path}")
+                success = True
+            else:
+                print("[ERROR] Could not find stockfish binary within the downloaded tarball.")
+                success = False
+                
+            if os.path.exists(temp_extract_dir):
+                shutil.rmtree(temp_extract_dir)
+                
     except Exception as e:
         print(f"[ERROR] Failed to download or install Stockfish: {e}")
         success = False
         
     finally:
-        # Cleanup temp files and folders
-        if os.path.exists(temp_zip_path):
-            os.remove(temp_zip_path)
-        if os.path.exists(temp_extract_dir):
-            shutil.rmtree(temp_extract_dir)
-            
+        if os.path.exists(temp_file):
+            try:
+                os.remove(temp_file)
+            except Exception:
+                pass
+                
     return success
 
 def init_stockfish_engine():
@@ -101,9 +146,17 @@ def init_stockfish_engine():
         return None
         
     try:
-        stockfish_exe = os.path.join(BASE_DIR, 'engines', 'stockfish.exe')
-        STOCKFISH_ENGINE = chess.engine.SimpleEngine.popen_uci(stockfish_exe)
-        print("Stockfish Chess Engine successfully initialized as a persistent background process.")
+        import platform
+        system_stockfish = shutil.which("stockfish")
+        if system_stockfish:
+            stockfish_executable = system_stockfish
+        else:
+            is_windows = platform.system() == 'Windows'
+            binary_name = 'stockfish.exe' if is_windows else 'stockfish'
+            stockfish_executable = os.path.join(BASE_DIR, 'engines', binary_name)
+            
+        STOCKFISH_ENGINE = chess.engine.SimpleEngine.popen_uci(stockfish_executable)
+        print(f"Stockfish Chess Engine successfully initialized as a persistent background process from: {stockfish_executable}")
         return STOCKFISH_ENGINE
     except Exception as e:
         print(f"[ERROR] Failed to start Stockfish subprocess: {e}")
@@ -156,6 +209,17 @@ def init_default_model():
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.after_request
+def add_header(response):
+    """
+    Forces the browser to completely disable caching. This ensures that any template 
+    or static file updates are instantly pulled without requiring aggressive manual reloads.
+    """
+    response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '-1'
+    return response
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
@@ -275,9 +339,14 @@ def play():
         return jsonify({'error': f"Inference execution failed: {str(e)}"}), 500
 
 if __name__ == '__main__':
+    import os
     # Initialize the default model before launching
     init_default_model()
     # Initialize Stockfish Persistent Engine
     init_stockfish_engine()
-    # Run server locally
-    app.run(host='127.0.0.1', port=5000, debug=False)
+    
+    # Cloud dynamic port binding (Hugging Face Spaces uses port 7860 by default)
+    port = int(os.environ.get("PORT", 5000))
+    host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    
+    app.run(host=host, port=port, debug=False)

@@ -496,7 +496,7 @@ html, body {
     justify-content: space-between;
     align-items: center;
     width: 100%;
-    max-width: 500px;
+    max-width: 640px;
     height: 40px;
 }
 
@@ -557,7 +557,7 @@ html, body {
 .chessboard-card-wrapper {
     position: relative;
     width: 100%;
-    max-width: min(500px, 44vh);
+    max-width: min(640px, 55vh);
     aspect-ratio: 1 / 1;
     margin: 4px 0;
 }
@@ -731,7 +731,7 @@ html, body {
 /* Game Status Bar */
 .game-status-bar {
     width: 100%;
-    max-width: 500px;
+    max-width: 640px;
     display: flex;
     align-items: center;
     gap: 10px;
@@ -930,6 +930,15 @@ html, body {
 
 .history-move:hover {
     color: var(--accent-cyan);
+}
+
+.history-move.active-replay {
+    background: var(--accent-cyan);
+    color: #0b0813 !important;
+    font-weight: 800;
+    border-radius: 4px;
+    padding: 2px 4px;
+    box-shadow: 0 0 8px var(--accent-cyan-glow);
 }
 
 /* Switch styling */
