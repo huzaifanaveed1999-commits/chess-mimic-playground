@@ -212,6 +212,13 @@
                     </div>
                 </div>
 
+                <!-- Toggle AI Thoughts Drawer -->
+                <div class="widget thinking-toggle-widget" style="margin-top: 10px; margin-bottom: 0;">
+                    <button class="btn btn-primary" id="btn-toggle-thoughts" style="width: 100%;" title="Toggle AI Thinking Process Drawer">
+                        <i data-lucide="brain"></i> Show AI Thoughts
+                    </button>
+                </div>
+
                 <!-- Action Controls in Single Row -->
                 <div class="action-buttons-group">
                     <button class="btn btn-secondary" id="btn-undo" title="Undo Move">
@@ -235,6 +242,41 @@
             <h2 id="modal-title">Game Over</h2>
             <p id="modal-desc">Checkmate! White has won the game.</p>
             <button class="btn btn-primary" id="btn-modal-restart">Play Again</button>
+        </div>
+    </div>
+
+    <!-- Sliding AI Thinking drawer panel -->
+    <div class="thinking-drawer" id="thinking-drawer">
+        <div class="drawer-header">
+            <div class="drawer-title">
+                <i data-lucide="brain"></i>
+                <h2>AI Move Selection & Thinking Process (4-Ply Stockfish Rollout)</h2>
+            </div>
+            <div class="drawer-meta">
+                <span>Initial Position Eval: </span>
+                <span class="eval-badge" id="thinking-initial-eval">0.00</span>
+                <button class="btn-close-drawer" id="btn-close-drawer">
+                    <i data-lucide="x"></i>
+                </button>
+            </div>
+        </div>
+        <div class="drawer-body">
+            <table class="thinking-table">
+                <thead>
+                    <tr>
+                        <th width="15%">Candidate</th>
+                        <th width="12%">NN Prob</th>
+                        <th width="43%">4-Ply Simulated Rollout Line</th>
+                        <th width="15%">SF End Eval</th>
+                        <th width="15%">Eval Drop</th>
+                    </tr>
+                </thead>
+                <tbody id="thinking-table-body">
+                    <tr>
+                        <td colspan="5" class="empty-table-placeholder">No rollout data calculated. Play a move!</td>
+                    </tr>
+                </tbody>
+            </table>
         </div>
     </div>
 

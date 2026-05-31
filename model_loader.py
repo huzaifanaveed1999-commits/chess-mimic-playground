@@ -3,6 +3,7 @@ import chess
 import torch
 import torch.nn as nn
 import numpy as np
+import chess.engine
 
 class ChessResBlock(nn.Module):
     def __init__(self, channels=32):
@@ -174,6 +175,68 @@ def check_blunder(board: chess.Board, move: chess.Move) -> bool:
         
     return False
 
+def get_stockfish_evaluation(engine, board: chess.Board, color: chess.Color, limit_time: float = 0.025) -> int:
+    """
+    Gets shallow Stockfish evaluation score relative to the specified color.
+    """
+    if engine is None:
+        return 0
+    try:
+        info = engine.analyse(board, chess.engine.Limit(time=limit_time))
+        score_obj = info["score"]
+        color_score = score_obj.white() if color == chess.WHITE else score_obj.black()
+        val = color_score.score(mate_score=10000)
+        return val if val is not None else 0
+    except Exception as e:
+        print(f"Stockfish eval error: {e}")
+        return 0
+
+def format_pawn_score(score_cp: int) -> str:
+    """
+    Converts centipawns to a beautiful +/- decimal pawn string or mate code.
+    """
+    if abs(score_cp) >= 8000:
+        mate_in = (10000 - abs(score_cp)) // 100
+        sign = "+" if score_cp > 0 else "-"
+        return f"{sign}M{max(1, mate_in)}"
+    sign = "+" if score_cp >= 0 else ""
+    return f"{sign}{score_cp / 100.0:.2f}"
+
+def rollout_candidate_move(engine, board: chess.Board, move: chess.Move, ai_color: chess.Color) -> tuple:
+    """
+    Executes the candidate move, then plays out 3 plies recommended by Stockfish.
+    Returns:
+        line_moves: list of UCI strings
+        line_sans: list of SAN strings
+        final_score: int (final Stockfish evaluation)
+    """
+    temp_board = board.copy()
+    line_moves = []
+    line_sans = []
+    
+    # Ply 1: Our candidate move
+    line_sans.append(temp_board.san(move))
+    temp_board.push(move)
+    line_moves.append(move.uci())
+    
+    # Ply 2, 3, 4: Stockfish best moves
+    for ply in range(2, 5):
+        if temp_board.is_game_over():
+            break
+        try:
+            # Shallow 25ms play recommendation
+            result = engine.play(temp_board, chess.engine.Limit(time=0.025))
+            opp_move = result.move
+            line_sans.append(temp_board.san(opp_move))
+            temp_board.push(opp_move)
+            line_moves.append(opp_move.uci())
+        except Exception as e:
+            print(f"Stockfish rollout error at ply {ply}: {e}")
+            break
+            
+    final_score = get_stockfish_evaluation(engine, temp_board, ai_color)
+    return line_moves, line_sans, final_score
+
 def load_chess_model(model_path: str, device: str = 'cpu') -> ChessMimicModel:
     """
     Loads weights into the ChessMimicModel from a .pth file.
@@ -185,13 +248,14 @@ def load_chess_model(model_path: str, device: str = 'cpu') -> ChessMimicModel:
     model.eval()
     return model
 
-def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: float = 0.0, device: str = 'cpu'):
+def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: float = 0.0, device: str = 'cpu', engine=None):
     """
-    Evaluates all legal moves for the current board state using the model.
+    Evaluates moves using PyTorch network, then guides decision using a 4-ply Stockfish lookahead.
     Returns:
         best_move: chess.Move
-        move_evals: list of dicts with keys (uci, probability, confidence, logit)
-        all_logits_map: dict of all 4096 logits for heatmap visualization
+        move_evals: list of neural evaluations
+        heatmap_data: 4096-logit heatmap
+        thinking_process: dict of Stockfish rollouts & drop evaluations
     """
     # 1. Convert board to tensor
     inp = board_to_tensor(board).to(device)
@@ -211,7 +275,7 @@ def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: floa
     # 3. Filter legal moves and run Blunder Guard Check
     legal_moves = list(board.legal_moves)
     if not legal_moves:
-        return None, [], heatmap_data
+        return None, [], heatmap_data, {'active': False}
         
     move_logits = []
     blunder_flags = []
@@ -231,7 +295,6 @@ def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: floa
     move_logits = np.array(move_logits, dtype=np.float32)
     
     # 4. Softmax calculation over legal moves
-    # Subtract max for numerical stability
     exp_logits = np.exp(move_logits - np.max(move_logits))
     probs = exp_logits / np.sum(exp_logits)
     
@@ -250,12 +313,10 @@ def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: floa
     # Sort moves by probability descending
     move_evals.sort(key=lambda x: x['probability'], reverse=True)
     
-    # 5. Select move based on temperature
+    # Base fallback move selection
     if temperature <= 0.01:
-        # Greedy choice: highest probability move
         best_move_dict = move_evals[0]
     else:
-        # Sample based on temperature scaled probabilities
         scaled_logits = move_logits / temperature
         exp_scaled = np.exp(scaled_logits - np.max(scaled_logits))
         scaled_probs = exp_scaled / np.sum(exp_scaled)
@@ -265,4 +326,58 @@ def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: floa
         
     best_move = chess.Move.from_uci(best_move_dict['uci'])
     
-    return best_move, move_evals, heatmap_data
+    # 5. Stockfish Hybrid Rollout Logic
+    thinking_process = {'active': False}
+    if engine is not None:
+        # Get baseline score before making the move
+        initial_score = get_stockfish_evaluation(engine, board, board.turn)
+        
+        # Select the Top 10 candidates from the model (moves with highest NN probabilities)
+        candidates_uci = [ev['uci'] for ev in move_evals[:10]]
+        candidates = [chess.Move.from_uci(uci) for uci in candidates_uci]
+        
+        thinking_candidates = []
+        best_rollout_move = None
+        best_final_score = -999999
+        
+        for idx, move in enumerate(candidates):
+            line_moves, line_sans, final_score = rollout_candidate_move(engine, board, move, board.turn)
+            eval_drop = initial_score - final_score
+            
+            # Format display strings
+            prob_pct = next(ev['probability'] for ev in move_evals if ev['uci'] == move.uci())
+            
+            thinking_candidates.append({
+                'uci': move.uci(),
+                'san': board.san(move),
+                'nn_probability': float(prob_pct),
+                'rollout': line_moves,
+                'rollout_sans': line_sans,
+                'final_score_raw': final_score,
+                'final_score': format_pawn_score(final_score),
+                'eval_drop': format_pawn_score(eval_drop),
+                'eval_drop_raw': eval_drop,
+                'is_selected': False
+            })
+            
+            # The best move is the one that maximizes the final rollout evaluation (lowest drop)
+            if final_score > best_final_score:
+                best_final_score = final_score
+                best_rollout_move = move
+                
+        # Mark selected move in metadata
+        if best_rollout_move:
+            for cand in thinking_candidates:
+                if cand['uci'] == best_rollout_move.uci():
+                    cand['is_selected'] = True
+                    break
+            
+            best_move = best_rollout_move
+            thinking_process = {
+                'active': True,
+                'initial_score': format_pawn_score(initial_score),
+                'candidates': thinking_candidates,
+                'selected_move': best_rollout_move.uci()
+            }
+            
+    return best_move, move_evals, heatmap_data, thinking_process

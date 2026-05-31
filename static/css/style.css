@@ -557,7 +557,7 @@ html, body {
 .chessboard-card-wrapper {
     position: relative;
     width: 100%;
-    max-width: min(500px, 48vh);
+    max-width: min(500px, 44vh);
     aspect-ratio: 1 / 1;
     margin: 4px 0;
 }
@@ -1118,4 +1118,191 @@ input:checked + .slider-round:before {
 .modal-card .btn {
     width: 100%;
     padding: 10px;
+}
+
+/* Sliding AI Thinking Drawer Panel styling */
+.thinking-drawer {
+    position: fixed;
+    bottom: -300px; /* Hidden offscreen by default */
+    left: 0;
+    right: 0;
+    height: 250px;
+    z-index: 999;
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    background: rgba(11, 7, 20, 0.95);
+    border-top: 1.5px solid var(--border-color);
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+    transition: bottom 0.3s cubic-bezier(0.1, 0.8, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.thinking-drawer.show {
+    bottom: 0; /* Slide up into view */
+}
+
+.drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.01);
+    flex-shrink: 0;
+}
+
+.drawer-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.drawer-title i {
+    width: 16px;
+    height: 16px;
+    color: var(--accent-cyan);
+}
+
+.drawer-title h2 {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-primary);
+}
+
+.drawer-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.eval-badge {
+    background: rgba(6, 182, 212, 0.12);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    color: var(--accent-cyan);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-weight: 700;
+}
+
+.btn-close-drawer {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: color var(--transition-speed);
+}
+
+.btn-close-drawer:hover {
+    color: var(--text-primary);
+}
+
+.btn-close-drawer i {
+    width: 14px;
+    height: 14px;
+}
+
+.drawer-body {
+    padding: 10px 20px;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* Thinking Drawer Table */
+.thinking-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.thinking-table th, .thinking-table td {
+    padding: 6px 10px;
+    font-size: 11px;
+    vertical-align: middle;
+}
+
+.thinking-table th {
+    background: rgba(255, 255, 255, 0.01);
+    border-bottom: 1.5px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.thinking-table td {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.02);
+    font-weight: 500;
+}
+
+.thinking-table tr.row-selected {
+    background: rgba(16, 185, 129, 0.04);
+    border-left: 3px solid #10b981;
+}
+
+.thinking-table tr.row-eliminated {
+    opacity: 0.6;
+}
+
+/* Rollout Tag chains */
+.rollout-tag {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    padding: 1px 4px;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 9px;
+    margin-right: 3px;
+    color: var(--text-primary);
+    display: inline-block;
+}
+
+.rollout-tag.rollout-header {
+    background: rgba(139, 92, 246, 0.08);
+    border-color: rgba(139, 92, 246, 0.2);
+    color: var(--accent-purple);
+    font-weight: 700;
+}
+
+.empty-table-placeholder {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    padding: 30px 10px;
+    border: 1px dashed rgba(255, 255, 255, 0.03);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.005);
+}
+
+/* Status Badges */
+.badge {
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 8px;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: inline-block;
+}
+
+.badge.selected {
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid #10b981;
+    color: #10b981;
+    box-shadow: 0 0 6px rgba(16, 185, 129, 0.1);
+}
+
+.badge.eliminated {
+    background: rgba(255, 77, 109, 0.08);
+    border: 1px solid var(--accent-coral);
+    color: var(--accent-coral);
 }

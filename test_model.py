@@ -36,7 +36,7 @@ def run_dry_run():
     # 4. Evaluate moves using model
     print("[INFO] Evaluating starting moves...")
     try:
-        best_move, move_evals, heatmap_data = evaluate_moves(model, board, temperature=0.0, device='cpu')
+        best_move, move_evals, heatmap_data, thinking_process = evaluate_moves(model, board, temperature=0.0, device='cpu', engine=None)
         
         print("\n================== TEST RESULTS ==================")
         print(f"AI Selected Best Move: {best_move} ({board.san(best_move)})")

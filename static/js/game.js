@@ -57,6 +57,13 @@ const btnCopyFen = document.getElementById('btn-copy-fen');
 const dropzone = document.getElementById('upload-dropzone');
 const fileInput = document.getElementById('model-file-input');
 
+// Thinking Process Panel DOM Elements
+const btnToggleThoughts = document.getElementById('btn-toggle-thoughts');
+const btnCloseDrawer = document.getElementById('btn-close-drawer');
+const thinkingDrawer = document.getElementById('thinking-drawer');
+const thinkingInitialEval = document.getElementById('thinking-initial-eval');
+const thinkingTableBody = document.getElementById('thinking-table-body');
+
 // Initialize the Application
 window.addEventListener('DOMContentLoaded', () => {
     buildBoardSquares();
@@ -128,6 +135,7 @@ function startNewGame() {
     updateMoveHistory();
     updateStatusMessage();
     clearAIAnalysis();
+    clearThinkingProcess();
     
     // Hide game-over modal
     modalOverlay.style.display = 'none';
@@ -329,6 +337,9 @@ function triggerAIMove() {
         // Render detailed AI predictions dashboard
         renderAIAnalysis(data.move_evals);
         
+        // Render Stockfish Hybrid rollout thinking process drawer
+        renderAIThinkingProcess(data.thinking_process);
+        
         // Render Heatmap glows
         if (showHeatmap) {
             renderHeatmapCumulative();
@@ -509,6 +520,99 @@ window.makeSuggestedMove = function(uci) {
         checkAITurn();
     }
 };
+
+// Render the 4-ply Stockfish hybrid thought visualizer
+function renderAIThinkingProcess(data) {
+    if (!thinkingTableBody || !thinkingInitialEval) return;
+    
+    if (!data || !data.active) {
+        thinkingTableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="empty-table-placeholder">
+                    Stockfish engine is currently offline or not initialized.
+                </td>
+            </tr>
+        `;
+        thinkingInitialEval.textContent = "0.00";
+        return;
+    }
+    
+    // Set initial position evaluation score
+    thinkingInitialEval.textContent = data.initial_score;
+    
+    // Clear previous rows
+    thinkingTableBody.innerHTML = '';
+    
+    // Iterate and populate candidate rows
+    data.candidates.forEach(cand => {
+        const uci = cand.uci;
+        const san = cand.san;
+        const probPct = (cand.nn_probability * 100).toFixed(1);
+        const finalEval = cand.final_score;
+        const evalDrop = cand.eval_drop;
+        const isSelected = cand.is_selected;
+        
+        // Generate styled labels for the rollout move chain
+        let rolloutHtml = '';
+        if (cand.rollout_sans && cand.rollout_sans.length > 0) {
+            cand.rollout_sans.forEach((m_san, idx) => {
+                const stepNum = idx + 1;
+                rolloutHtml += `<span class="rollout-tag rollout-header">Ply ${stepNum}</span>`;
+                rolloutHtml += `<span class="rollout-tag">${m_san}</span>`;
+            });
+        } else {
+            rolloutHtml = '<span style="color: var(--text-secondary);">No subsequent moves (Checkmate/Draw reached)</span>';
+        }
+        
+        // Highlight negative drop (good!) or heavy drop (blunder!)
+        const dropRaw = cand.eval_drop_raw;
+        let dropStyle = '';
+        if (dropRaw > 150) {
+            dropStyle = 'style="color: var(--accent-coral); font-weight: 700;"'; // heavy blunder!
+        } else if (dropRaw <= 10) {
+            dropStyle = 'style="color: #10b981; font-weight: 700;"'; // optimal!
+        }
+        
+        const row = document.createElement('tr');
+        row.className = isSelected ? 'row-selected' : 'row-eliminated';
+        
+        row.innerHTML = `
+            <td>
+                <span class="prob-move" style="font-weight:800;">${san}</span>
+                ${isSelected ? '<span class="badge selected" style="margin-left:6px;">Played</span>' : ''}
+            </td>
+            <td style="font-family: monospace; font-weight: 700; color: var(--accent-purple);">${probPct}%</td>
+            <td>${rolloutHtml}</td>
+            <td style="font-family: monospace; font-weight: 700;">${finalEval}</td>
+            <td style="font-family: monospace;" ${dropStyle}>${evalDrop}</td>
+        `;
+        
+        thinkingTableBody.appendChild(row);
+    });
+    
+    // Automatically pop open the drawer if it's currently shut, to show the calculations
+    if (!thinkingDrawer.classList.contains('show')) {
+        thinkingDrawer.classList.add('show');
+        if (btnToggleThoughts) {
+            btnToggleThoughts.innerHTML = '<i data-lucide="eye-off"></i> Hide AI Thoughts';
+            lucide.createIcons();
+        }
+    }
+}
+
+// Clear the thinking process drawer back to empty state
+function clearThinkingProcess() {
+    if (thinkingTableBody) {
+        thinkingTableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="empty-table-placeholder">No rollout data calculated. Play a move!</td>
+            </tr>
+        `;
+    }
+    if (thinkingInitialEval) {
+        thinkingInitialEval.textContent = "0.00";
+    }
+}
 
 // Clear evaluation logs
 function clearAIAnalysis() {
@@ -747,6 +851,28 @@ function setupEventListeners() {
         });
     });
     
+    // Toggle AI Thoughts Drawer
+    if (btnToggleThoughts) {
+        btnToggleThoughts.addEventListener('click', () => {
+            thinkingDrawer.classList.toggle('show');
+            const isOpen = thinkingDrawer.classList.contains('show');
+            btnToggleThoughts.innerHTML = isOpen 
+                ? '<i data-lucide="eye-off"></i> Hide AI Thoughts'
+                : '<i data-lucide="brain"></i> Show AI Thoughts';
+            lucide.createIcons();
+        });
+    }
+    
+    if (btnCloseDrawer) {
+        btnCloseDrawer.addEventListener('click', () => {
+            thinkingDrawer.classList.remove('show');
+            if (btnToggleThoughts) {
+                btnToggleThoughts.innerHTML = '<i data-lucide="brain"></i> Show AI Thoughts';
+                lucide.createIcons();
+            }
+        });
+    }
+
     // Undo, Reset, Copy FEN
     btnUndo.addEventListener('click', () => {
         if (aiThinking) return;
@@ -766,6 +892,7 @@ function setupEventListeners() {
         updateStatusMessage();
         clearHeatmap();
         clearAIAnalysis();
+        clearThinkingProcess();
     });
     
     btnReset.addEventListener('click', () => {
