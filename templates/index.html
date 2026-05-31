@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mimic Chess AI Playground - PyTorch Neural Network Arena</title>
+    <!-- Modern Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons for premium UI look -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="glass-bg-glow"></div>
+    <div class="glass-bg-glow secondary"></div>
+
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-logo">
+                <div class="logo-icon-wrapper">
+                    <i data-lucide="cpu" class="logo-icon"></i>
+                </div>
+                <div class="logo-text">
+                    <h1>MIMIC</h1>
+                    <span>CHESS AI PLAYGROUND</span>
+                </div>
+            </div>
+            <div class="header-status">
+                <div class="status-indicator">
+                    <span class="pulse-dot active" id="connection-status-dot"></span>
+                    <span id="connection-status-text">Server Connected</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="app-workspace">
+            <!-- Left Panel: AI & Model Dashboard -->
+            <section class="panel panel-left glass-card">
+                <div class="panel-header">
+                    <i data-lucide="brain-circuit"></i>
+                    <h2>Neural Net Engine</h2>
+                </div>
+                
+                <!-- Unified Model Weight Widget -->
+                <div class="widget model-status-widget">
+                    <div class="model-meta-box">
+                        <div class="model-info-row">
+                            <span class="label">Model:</span>
+                            <span class="value active-model-name" id="model-name-text">Loading...</span>
+                        </div>
+                        <div class="model-info-row">
+                            <span class="label">Size / Params:</span>
+                            <span class="value"><span id="model-size-text">0.0 MB</span> / <span id="model-params-text">0M</span></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Drag & Drop Uploader -->
+                <div class="widget uploader-widget">
+                    <div class="upload-dropzone" id="upload-dropzone">
+                        <input type="file" id="model-file-input" accept=".pth" style="display: none;">
+                        <i data-lucide="upload-cloud" class="upload-icon"></i>
+                        <p class="dropzone-text">Drag & drop weights (.pth) or <span class="browse-link">browse</span></p>
+                    </div>
+                    <div class="upload-progress-bar" id="upload-progress-container" style="display: none;">
+                        <div class="progress-fill" id="upload-progress-fill"></div>
+                        <span id="upload-progress-text">Uploading 0%</span>
+                    </div>
+                    <div class="upload-message" id="upload-msg"></div>
+                </div>
+
+                <!-- AI Parameters -->
+                <div class="widget settings-widget">
+                    <div class="setting-group">
+                        <div class="setting-header">
+                            <span class="setting-label">Softmax Temperature</span>
+                            <span class="setting-value" id="temp-val">0.00</span>
+                        </div>
+                        <input type="range" class="slider" id="temp-slider" min="0.0" max="1.0" step="0.05" value="0.0">
+                        <div class="slider-labels">
+                            <span>Determinism (0.0)</span>
+                            <span>Randomness (1.0)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- AI Control Mode Segmented Buttons -->
+                <div class="widget execution-mode-widget">
+                    <h3>AI Control Mode</h3>
+                    <div class="execution-buttons">
+                        <button class="btn-exec active" id="btn-exec-auto" title="AI automatically plays its best move">
+                            <i data-lucide="play-circle"></i> Auto Play
+                        </button>
+                        <button class="btn-exec" id="btn-exec-suggest" title="AI suggests moves, you click to play them">
+                            <i data-lucide="help-circle"></i> Suggest & Select
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Live Move Logits Evaluation -->
+                <div class="widget evaluation-widget">
+                    <h3>AI Policy Probability (Top 5 Moves)</h3>
+                    <div class="probability-list" id="probability-list">
+                        <div class="empty-list-placeholder">No active computations. Make a move!</div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Center Panel: The Game Area -->
+            <section class="panel panel-center">
+                <div class="game-info-banner">
+                    <div class="player-pill white-player" id="player-white-info">
+                        <div class="avatar"><i data-lucide="user"></i></div>
+                        <span class="player-name">Player (White)</span>
+                    </div>
+                    <div class="versus-divider">VS</div>
+                    <div class="player-pill black-player active" id="player-black-info">
+                        <div class="avatar"><i data-lucide="bot"></i></div>
+                        <span class="player-name">Mimic AI (Black)</span>
+                    </div>
+                </div>
+
+                <!-- Chessboard Wrapper with height-responsive scaling -->
+                <div class="chessboard-card-wrapper">
+                    <div class="chessboard-card glass-card">
+                        <div class="chessboard-outer">
+                            <!-- Rank Labels Left -->
+                            <div class="board-labels ranks">
+                                <span>8</span><span>7</span><span>6</span><span>5</span>
+                                <span>4</span><span>3</span><span>2</span><span>1</span>
+                            </div>
+                            
+                            <div class="board-container">
+                                <!-- The Interactive Chess Grid -->
+                                <div class="chessboard-grid" id="chessboard"></div>
+                                <!-- Overlay layer for Heatmaps -->
+                                <div class="chessboard-heatmap-overlay" id="heatmap-overlay"></div>
+                            </div>
+                            
+                            <!-- File Labels Bottom -->
+                            <div class="board-labels files">
+                                <span>a</span><span>b</span><span>c</span><span>d</span>
+                                <span>e</span><span>f</span><span>g</span><span>h</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Match Status Feed -->
+                <div class="game-status-bar glass-card">
+                    <div class="status-icon-wrapper">
+                        <i data-lucide="swords" id="game-status-icon"></i>
+                    </div>
+                    <div class="status-message" id="game-status-message">Loading model, please wait...</div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Match Logs & Tools -->
+            <section class="panel panel-right glass-card">
+                <div class="panel-header">
+                    <i data-lucide="gamepad-2"></i>
+                    <h2>Play & History</h2>
+                </div>
+
+                <!-- Game Settings & Modes in Single Row -->
+                <div class="widget game-mode-widget">
+                    <h3>Game Mode</h3>
+                    <div class="mode-buttons">
+                        <button class="btn-mode active" data-mode="player-vs-ai-black">
+                            <i data-lucide="user"></i> White vs AI
+                        </button>
+                        <button class="btn-mode" data-mode="player-vs-ai-white">
+                            <i data-lucide="bot"></i> AI vs Black
+                        </button>
+                        <button class="btn-mode" data-mode="ai-vs-ai">
+                            <i data-lucide="zap"></i> AI vs AI
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Move Logs -->
+                <div class="widget movelist-widget">
+                    <div class="widget-header">
+                        <h3>Match Notation</h3>
+                        <span class="move-count" id="move-counter">0 moves</span>
+                    </div>
+                    <div class="move-history-container" id="move-history-list">
+                        <!-- Moves will be appended here -->
+                        <div class="empty-history-placeholder">No moves recorded yet.</div>
+                    </div>
+                </div>
+
+                <!-- Heatmap Legend & Controls -->
+                <div class="widget heatmap-control-widget">
+                    <div class="heatmap-toggle-container">
+                        <label class="switch">
+                            <input type="checkbox" id="heatmap-toggle" checked>
+                            <span class="slider-round"></span>
+                        </label>
+                        <span class="toggle-label">Move Policy Heatmap</span>
+                    </div>
+                    <div class="legend-box">
+                        <div class="legend-gradient"></div>
+                        <div class="legend-labels">
+                            <span>0% probability</span>
+                            <span>100% probability</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Controls in Single Row -->
+                <div class="action-buttons-group">
+                    <button class="btn btn-secondary" id="btn-undo" title="Undo Move">
+                        <i data-lucide="undo-2"></i> Undo
+                    </button>
+                    <button class="btn btn-danger" id="btn-reset" title="Reset Match">
+                        <i data-lucide="refresh-cw"></i> Reset
+                    </button>
+                    <button class="btn btn-secondary" id="btn-copy-fen" title="Copy Board FEN">
+                        <i data-lucide="clipboard"></i> Copy FEN
+                    </button>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- UI Overlay for Game Over alerts -->
+    <div class="modal-overlay" id="game-over-modal" style="display: none;">
+        <div class="modal-card glass-card">
+            <i data-lucide="trophy" class="modal-icon winner-icon"></i>
+            <h2 id="modal-title">Game Over</h2>
+            <p id="modal-desc">Checkmate! White has won the game.</p>
+            <button class="btn btn-primary" id="btn-modal-restart">Play Again</button>
+        </div>
+    </div>
+
+    <!-- Chess.js for flawless, chess logic validation on the client -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+    <!-- Frontend Core Scripts -->
+    <script src="{{ url_for('static', filename='js/game.js') }}"></script>
+    <script>
+        // Initialize Lucide icons on page load
+        lucide.createIcons();
+    </script>
+</body>
+</html>
