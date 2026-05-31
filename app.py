@@ -38,8 +38,13 @@ def ensure_stockfish_installed():
     
     # 1. First check system-wide path (e.g. if installed via apt-get on Linux)
     system_stockfish = shutil.which("stockfish")
+    if not system_stockfish and not is_windows:
+        for loc in ["/usr/games/stockfish", "/usr/bin/stockfish", "/usr/local/bin/stockfish"]:
+            if os.path.exists(loc):
+                system_stockfish = loc
+                break
     if system_stockfish:
-        print(f"Stockfish engine found globally in system PATH: {system_stockfish}")
+        print(f"Stockfish engine found globally in system PATH/directories: {system_stockfish}")
         return True
         
     # 2. Check local engines directory
@@ -147,11 +152,16 @@ def init_stockfish_engine():
         
     try:
         import platform
+        is_windows = platform.system() == 'Windows'
         system_stockfish = shutil.which("stockfish")
+        if not system_stockfish and not is_windows:
+            for loc in ["/usr/games/stockfish", "/usr/bin/stockfish", "/usr/local/bin/stockfish"]:
+                if os.path.exists(loc):
+                    system_stockfish = loc
+                    break
         if system_stockfish:
             stockfish_executable = system_stockfish
         else:
-            is_windows = platform.system() == 'Windows'
             binary_name = 'stockfish.exe' if is_windows else 'stockfish'
             stockfish_executable = os.path.join(BASE_DIR, 'engines', binary_name)
             
