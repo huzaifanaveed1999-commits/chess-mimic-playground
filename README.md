@@ -1,8 +1,8 @@
 ---
 title: Chess Mimic Playground
 emoji: 🧩
-colorFrom: dark-indigo
-colorTo: slate
+colorFrom: indigo
+colorTo: gray
 sdk: docker
 app_port: 7860
 pinned: false
