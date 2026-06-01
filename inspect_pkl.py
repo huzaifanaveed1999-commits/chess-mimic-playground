@@ -118,4 +118,18 @@ def inspect_pkl(file_path):
                 traceback.print_exc()
 
 if __name__ == '__main__':
-    inspect_pkl(r"C:\Users\Osama\Downloads\y4k2_mimic.pth")
+    import os
+    possible_paths = [
+        r"C:\Users\Osama\Downloads\chess_mimic_model.pth",
+        r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
+    ]
+    path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            path = p
+            break
+            
+    if path:
+        inspect_pkl(path)
+    else:
+        print("Error: Model file not found in Downloads.")

@@ -188,28 +188,36 @@ def shutdown_engine():
 
 def init_default_model():
     """
-    Intelligently checks if the user's downloaded y4k2_mimic.pth exists,
-    copies it to the local models folder, and loads it as active.
+    Intelligently checks if the user's downloaded model exists (under private or public name),
+    copies it to the local models folder as chess_mimic_model.pth, and loads it.
     """
     global ACTIVE_MODEL, ACTIVE_MODEL_NAME
-    default_download_path = r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
-    local_path = os.path.join(MODELS_DIR, "y4k2_mimic.pth")
+    
+    # Check both potential downloaded names for backward/privacy compatibility
+    possible_downloads = [
+        r"C:\Users\Osama\Downloads\chess_mimic_model.pth",
+        r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
+    ]
+    
+    local_path = os.path.join(MODELS_DIR, "chess_mimic_model.pth")
     
     # 1. Copy file if it exists in Downloads and not locally
-    if os.path.exists(default_download_path):
-        if not os.path.exists(local_path):
-            try:
-                shutil.copy(default_download_path, local_path)
-                print(f"Copied {default_download_path} to {local_path}")
-            except Exception as e:
-                print(f"Error copying default model: {e}")
+    for download_path in possible_downloads:
+        if os.path.exists(download_path):
+            if not os.path.exists(local_path):
+                try:
+                    shutil.copy(download_path, local_path)
+                    print(f"Copied {download_path} to local path {local_path}")
+                except Exception as e:
+                    print(f"Error copying default model: {e}")
+            break
                 
     # 2. Try loading local model
     if os.path.exists(local_path):
         try:
             ACTIVE_MODEL = load_chess_model(local_path, device=DEVICE)
-            ACTIVE_MODEL_NAME = "y4k2_mimic.pth"
-            print("Successfully loaded default model: y4k2_mimic.pth")
+            ACTIVE_MODEL_NAME = "chess_mimic_model.pth"
+            print("Successfully loaded default model: chess_mimic_model.pth")
             return
         except Exception as e:
             print(f"Error loading local model: {e}")

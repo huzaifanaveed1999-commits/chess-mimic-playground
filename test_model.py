@@ -8,10 +8,19 @@ from model_loader import load_chess_model, evaluate_moves
 def run_dry_run():
     print("=====================================================")
     # 1. Locate the model
-    model_path = r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
-    if not os.path.exists(model_path):
-        print(f"[ERROR] Could not find the model file at {model_path}")
-        print("Please ensure y4k2_mimic.pth remains in your Downloads folder.")
+    possible_paths = [
+        r"C:\Users\Osama\Downloads\chess_mimic_model.pth",
+        r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
+    ]
+    model_path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            model_path = p
+            break
+            
+    if not model_path:
+        print("[ERROR] Could not find the model file in Downloads folder.")
+        print("Please ensure chess_mimic_model.pth remains in your Downloads folder.")
         sys.exit(1)
         
     print(f"[INFO] Model found at: {model_path}")

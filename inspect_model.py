@@ -73,9 +73,18 @@ def inspect_without_torch(file_path):
         print(f"Failed to inspect zip structure: {e}")
 
 if __name__ == '__main__':
-    path = r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
-    if not os.path.exists(path):
-        print(f"Error: File not found at {path}")
+    possible_paths = [
+        r"C:\Users\Osama\Downloads\chess_mimic_model.pth",
+        r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
+    ]
+    path = None
+    for p in possible_paths:
+        if os.path.exists(p):
+            path = p
+            break
+            
+    if not path:
+        print("Error: Model file not found in Downloads.")
         sys.exit(1)
         
     print(f"Inspecting file: {path}")
