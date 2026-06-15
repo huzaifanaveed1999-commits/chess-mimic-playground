@@ -40,7 +40,7 @@ const statusIcon = document.getElementById('game-status-icon');
 const probList = document.getElementById('probability-list');
 const moveCounter = document.getElementById('move-counter');
 const moveHistoryList = document.getElementById('move-history-list');
-const modelNameText = document.getElementById('model-name-text');
+const modelSelector = document.getElementById('model-selector');
 const modelSizeText = document.getElementById('model-size-text');
 const modelParamsText = document.getElementById('model-params-text');
 const tempSlider = document.getElementById('temp-slider');
@@ -74,7 +74,7 @@ const thinkingTableBody = document.getElementById('thinking-table-body');
 // Initialize the Application
 window.addEventListener('DOMContentLoaded', () => {
     buildBoardSquares();
-    fetchModelStatus();
+    fetchModelsList();
     setupEventListeners();
     startNewGame();
 });
@@ -837,6 +837,44 @@ function updateMoveHistory() {
 
 // UI Settings change listeners
 function setupEventListeners() {
+    // Model Selector change event
+    if (modelSelector) {
+        modelSelector.addEventListener('change', () => {
+            const selectedModelName = modelSelector.value;
+            if (!selectedModelName) return;
+            
+            aiThinking = true;
+            statusMessage.textContent = `Switching model engine to ${selectedModelName}...`;
+            statusIcon.setAttribute('data-lucide', 'refresh-cw');
+            lucide.createIcons();
+            
+            fetch('/api/select_model', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ model_name: selectedModelName })
+            })
+            .then(res => res.json())
+            .then(data => {
+                aiThinking = false;
+                if (data.success) {
+                    updateModelMetadataDisplay();
+                    startNewGame();
+                } else {
+                    alert(data.error || 'Failed to switch model.');
+                    fetchModelsList();
+                }
+            })
+            .catch(err => {
+                aiThinking = false;
+                console.error("Model select error:", err);
+                alert("Error communicating with server.");
+                fetchModelsList();
+            });
+        });
+    }
+
     // Execution Mode Buttons
     const btnExecAuto = document.getElementById('btn-exec-auto');
     const btnExecSuggest = document.getElementById('btn-exec-suggest');
@@ -1113,14 +1151,8 @@ function handleFileUpload(file) {
             const res = JSON.parse(xhr.responseText);
             if (xhr.status === 200) {
                 showUploadMsg(res.message, 'success');
-                // Update active model metadata on UI
-                modelNameText.textContent = res.model_name;
-                modelSizeText.textContent = `${res.model_size_mb} MB`;
-                modelParamsText.textContent = formatParamCount(res.parameter_count);
-                
-                // Alert server connection active
-                document.getElementById('connection-status-dot').className = "pulse-dot active";
-                document.getElementById('connection-status-text').textContent = "Model Loaded Successfully";
+                // Refresh list and select the uploaded model
+                fetchModelsList(res.model_name);
                 
                 // Play new match with new weights
                 startNewGame();
@@ -1146,34 +1178,84 @@ function showUploadMsg(text, type) {
     msg.className = `upload-message ${type}`;
 }
 
-// Fetch active model information from Flask API
-function fetchModelStatus() {
-    fetch('/api/status')
+// // Fetch list of available models from Flask API
+function fetchModelsList(selectFilenameAfterLoad) {
+    fetch('/api/models')
     .then(res => res.json())
     .then(data => {
-        if (data.has_model) {
-            modelNameText.textContent = data.model_name;
-            modelSizeText.textContent = `${data.model_size_mb} MB`;
-            modelParamsText.textContent = formatParamCount(data.parameter_count);
+        if (!modelSelector) return;
+        modelSelector.innerHTML = '';
+        if (data.models && data.models.length > 0) {
+            data.models.forEach(model => {
+                const opt = document.createElement('option');
+                opt.value = model.filename;
+                opt.textContent = model.display_name;
+                opt.dataset.size = model.size_mb;
+                opt.dataset.params = model.parameter_count;
+                opt.dataset.uses_stockfish = model.uses_stockfish;
+                modelSelector.appendChild(opt);
+            });
+            
+            // Set selection
+            const targetModel = selectFilenameAfterLoad || data.active_model;
+            if (targetModel) {
+                modelSelector.value = targetModel;
+            }
+            
+            // Trigger UI update based on the currently selected option
+            updateModelMetadataDisplay();
             
             document.getElementById('connection-status-dot').className = "pulse-dot active";
-            document.getElementById('connection-status-text').textContent = "Model Ready";
+            document.getElementById('connection-status-text').textContent = "Model Engine Ready";
         } else {
-            modelNameText.textContent = "No weights uploaded";
+            modelSelector.innerHTML = '<option value="">No models loaded</option>';
             modelSizeText.textContent = "0.0 MB";
             modelParamsText.textContent = "0M";
-            
             document.getElementById('connection-status-dot').className = "pulse-dot";
-            document.getElementById('connection-status-text').textContent = "No Weights Loaded";
+            document.getElementById('connection-status-text').textContent = "No Models Loaded";
             statusMessage.textContent = "Please upload PyTorch model weights (.pth) to play.";
         }
     })
     .catch(err => {
-        console.error("Status Check Error:", err);
-        modelNameText.textContent = "Offline";
+        console.error("Models Fetch Error:", err);
+        if (modelSelector) {
+            modelSelector.innerHTML = '<option value="">Server Offline</option>';
+        }
         document.getElementById('connection-status-dot').className = "pulse-dot";
         document.getElementById('connection-status-text').textContent = "Server Offline";
     });
+}
+
+function updateModelMetadataDisplay() {
+    if (!modelSelector) return;
+    const selectedOpt = modelSelector.options[modelSelector.selectedIndex];
+    if (selectedOpt && selectedOpt.value) {
+        const size = selectedOpt.dataset.size;
+        const params = parseInt(selectedOpt.dataset.params || 0);
+        modelSizeText.textContent = `${size} MB`;
+        modelParamsText.textContent = formatParamCount(params);
+        
+        // Dynamic status
+        document.getElementById('connection-status-dot').className = "pulse-dot active";
+        document.getElementById('connection-status-text').textContent = "Model Ready";
+        
+        // If the model does not use Stockfish, display a note in the thinking drawer
+        const usesStockfish = selectedOpt.dataset.uses_stockfish === 'true';
+        if (!usesStockfish) {
+            clearThinkingProcess();
+            if (thinkingTableBody) {
+                thinkingTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="empty-table-placeholder" style="color: var(--accent-cyan); font-weight: 500;">
+                            <i data-lucide="brain-circuit" style="vertical-align: middle; margin-right: 5px; width: 14px; height: 14px;"></i>
+                            Pure Policy Engine Active: Stockfish evaluation is disabled for this model.
+                        </td>
+                    </tr>
+                `;
+                lucide.createIcons();
+            }
+        }
+    }
 }
 
 // Formatting helpers

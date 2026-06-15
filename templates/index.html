@@ -47,11 +47,13 @@
                 
                 <!-- Unified Model Weight Widget -->
                 <div class="widget model-status-widget">
+                    <div class="model-selector-wrapper">
+                        <span class="model-selector-label">Active Model Engine</span>
+                        <select id="model-selector" class="model-select-dropdown">
+                            <option value="">Loading models...</option>
+                        </select>
+                    </div>
                     <div class="model-meta-box">
-                        <div class="model-info-row">
-                            <span class="label">Model:</span>
-                            <span class="value active-model-name" id="model-name-text">Loading...</span>
-                        </div>
                         <div class="model-info-row">
                             <span class="label">Size / Params:</span>
                             <span class="value"><span id="model-size-text">0.0 MB</span> / <span id="model-params-text">0M</span></span>

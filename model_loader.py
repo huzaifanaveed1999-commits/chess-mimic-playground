@@ -242,13 +242,27 @@ def load_chess_model(model_path: str, device: str = 'cpu') -> ChessMimicModel:
     Loads weights into the ChessMimicModel from a .pth file.
     """
     model = ChessMimicModel()
-    state_dict = torch.load(model_path, map_location=device)
+    try:
+        data = torch.load(model_path, map_location=device, weights_only=False)
+    except TypeError:
+        data = torch.load(model_path, map_location=device)
+        
+    if isinstance(data, dict):
+        if "model_state_dict" in data:
+            state_dict = data["model_state_dict"]
+        elif "state_dict" in data:
+            state_dict = data["state_dict"]
+        else:
+            state_dict = data
+    else:
+        state_dict = data
+        
     model.load_state_dict(state_dict)
     model.to(device)
     model.eval()
     return model
 
-def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: float = 0.0, device: str = 'cpu', engine=None):
+def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: float = 0.0, device: str = 'cpu', engine=None, use_stockfish=True):
     """
     Evaluates moves using PyTorch network, then guides decision using a 4-ply Stockfish lookahead.
     Returns:
@@ -285,9 +299,12 @@ def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: floa
         logit = float(logits[idx])
         
         # Check blunder guard
-        is_blunder = check_blunder(board, move)
-        if is_blunder:
-            logit -= 100.0  # Heavier penalty to override neural logits
+        if use_stockfish:
+            is_blunder = check_blunder(board, move)
+            if is_blunder:
+                logit -= 100.0  # Heavier penalty to override neural logits
+        else:
+            is_blunder = False
             
         move_logits.append(logit)
         blunder_flags.append(is_blunder)
@@ -328,7 +345,7 @@ def evaluate_moves(model: ChessMimicModel, board: chess.Board, temperature: floa
     
     # 5. Stockfish Hybrid Rollout Logic
     thinking_process = {'active': False}
-    if engine is not None:
+    if use_stockfish and engine is not None:
         # Get baseline score before making the move
         initial_score = get_stockfish_evaluation(engine, board, board.turn)
         

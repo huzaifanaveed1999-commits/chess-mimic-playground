@@ -188,39 +188,68 @@ def shutdown_engine():
 
 def init_default_model():
     """
-    Intelligently checks if the user's downloaded model exists (under private or public name),
-    copies it to the local models folder as chess_mimic_model.pth, and loads it.
+    Intelligently checks if the user's downloaded models exist,
+    copies them to the local models folder, and loads the active one.
     """
     global ACTIVE_MODEL, ACTIVE_MODEL_NAME
     
-    # Check both potential downloaded names for backward/privacy compatibility
-    possible_downloads = [
+    # Check both potential downloaded names for model 1
+    possible_downloads_1 = [
         r"C:\Users\Osama\Downloads\chess_mimic_model.pth",
         r"C:\Users\Osama\Downloads\y4k2_mimic.pth"
     ]
+    # Check potential downloaded names for model 2 (myself - pure neural policy model)
+    possible_downloads_2 = [
+        r"C:\Users\Osama\Downloads\chess_mimic_model (5).pth"
+    ]
     
-    local_path = os.path.join(MODELS_DIR, "chess_mimic_model.pth")
+    local_path_1 = os.path.join(MODELS_DIR, "chess_mimic_model.pth")
+    local_path_2 = os.path.join(MODELS_DIR, "user_mimic_model.pth")
     
-    # 1. Copy file if it exists in Downloads and not locally
-    for download_path in possible_downloads:
+    # 1. Copy model 1 if it exists in Downloads and not locally (or is LFS pointer)
+    for download_path in possible_downloads_1:
         if os.path.exists(download_path):
-            if not os.path.exists(local_path):
+            is_pointer = False
+            if os.path.exists(local_path_1) and os.path.getsize(local_path_1) < 10000:
+                is_pointer = True
+            if not os.path.exists(local_path_1) or is_pointer:
                 try:
-                    shutil.copy(download_path, local_path)
-                    print(f"Copied {download_path} to local path {local_path}")
+                    shutil.copy(download_path, local_path_1)
+                    print(f"Copied {download_path} to local path {local_path_1}")
                 except Exception as e:
-                    print(f"Error copying default model: {e}")
+                    print(f"Error copying default model 1: {e}")
+            break
+            
+    # 2. Copy model 2 if it exists in Downloads and not locally (or is LFS pointer)
+    for download_path in possible_downloads_2:
+        if os.path.exists(download_path):
+            is_pointer = False
+            if os.path.exists(local_path_2) and os.path.getsize(local_path_2) < 10000:
+                is_pointer = True
+            if not os.path.exists(local_path_2) or is_pointer:
+                try:
+                    shutil.copy(download_path, local_path_2)
+                    print(f"Copied {download_path} to local path {local_path_2}")
+                except Exception as e:
+                    print(f"Error copying model 2: {e}")
             break
                 
-    # 2. Try loading local model
-    if os.path.exists(local_path):
+    # 3. Load default model (prefer chess_mimic_model.pth)
+    default_model = "chess_mimic_model.pth"
+    if os.path.exists(local_path_1):
+        default_model = "chess_mimic_model.pth"
+    elif os.path.exists(local_path_2):
+        default_model = "user_mimic_model.pth"
+        
+    local_active_path = os.path.join(MODELS_DIR, default_model)
+    if os.path.exists(local_active_path):
         try:
-            ACTIVE_MODEL = load_chess_model(local_path, device=DEVICE)
-            ACTIVE_MODEL_NAME = "chess_mimic_model.pth"
-            print("Successfully loaded default model: chess_mimic_model.pth")
+            ACTIVE_MODEL = load_chess_model(local_active_path, device=DEVICE)
+            ACTIVE_MODEL_NAME = default_model
+            print(f"Successfully loaded default model: {default_model}")
             return
         except Exception as e:
-            print(f"Error loading local model: {e}")
+            print(f"Error loading local model {default_model}: {e}")
             
     print("No default model loaded. Waiting for user upload...")
 
@@ -261,6 +290,82 @@ def get_status():
         'parameter_count': param_count,
         'stockfish_active': STOCKFISH_ENGINE is not None
     })
+
+@app.route('/api/models', methods=['GET'])
+def get_models():
+    """
+    Returns a list of all model files currently inside the models directory,
+    along with their file sizes, parameter counts, and stockfish config.
+    """
+    global ACTIVE_MODEL_NAME
+    models = []
+    if os.path.exists(MODELS_DIR):
+        for f in os.listdir(MODELS_DIR):
+            if f.endswith('.pth'):
+                path = os.path.join(MODELS_DIR, f)
+                size_mb = round(os.path.getsize(path) / (1024 * 1024), 2)
+                try:
+                    temp_model = load_chess_model(path, device='cpu')
+                    params = sum(p.numel() for p in temp_model.parameters())
+                except Exception:
+                    params = 0
+                
+                # Dynamic display name and Stockfish compatibility flag
+                uses_stockfish = True
+                if f == "user_mimic_model.pth" or "user_mimic" in f:
+                    uses_stockfish = False
+                
+                display_name = f
+                if f == "chess_mimic_model.pth":
+                    display_name = "Mimic AI Model"
+                elif f == "user_mimic_model.pth":
+                    display_name = "Huzaifa"
+                
+                models.append({
+                    'filename': f,
+                    'display_name': display_name,
+                    'size_mb': size_mb,
+                    'parameter_count': params,
+                    'uses_stockfish': uses_stockfish
+                })
+    return jsonify({
+        'models': models,
+        'active_model': ACTIVE_MODEL_NAME
+    })
+
+@app.route('/api/select_model', methods=['POST'])
+def select_model():
+    """
+    Dynamically loads and switches the active model to the one requested.
+    """
+    global ACTIVE_MODEL, ACTIVE_MODEL_NAME
+    data = request.get_json() or {}
+    model_name = data.get('model_name')
+    
+    if not model_name:
+        return jsonify({'error': 'No model name specified'}), 400
+        
+    dest_path = os.path.join(MODELS_DIR, model_name)
+    if not os.path.exists(dest_path):
+        return jsonify({'error': f"Model '{model_name}' not found locally."}), 404
+        
+    try:
+        loaded_model = load_chess_model(dest_path, device=DEVICE)
+        ACTIVE_MODEL = loaded_model
+        ACTIVE_MODEL_NAME = model_name
+        
+        param_count = sum(p.numel() for p in ACTIVE_MODEL.parameters())
+        file_size_mb = round(os.path.getsize(dest_path) / (1024 * 1024), 2)
+        
+        return jsonify({
+            'success': True,
+            'message': f"Model switched to '{model_name}' successfully!",
+            'model_name': model_name,
+            'model_size_mb': file_size_mb,
+            'parameter_count': param_count
+        })
+    except Exception as e:
+        return jsonify({'error': f"Failed to load selected model: {str(e)}"}), 500
 
 @app.route('/api/upload', methods=['POST'])
 def upload_model():
@@ -329,8 +434,13 @@ def play():
         })
         
     try:
+        # User requested: "and for this model i don't want you to have stockfish layer on it"
+        use_sf = True
+        if ACTIVE_MODEL_NAME == "user_mimic_model.pth" or "user_mimic" in ACTIVE_MODEL_NAME:
+            use_sf = False
+            
         best_move, move_evals, heatmap_data, thinking_process = evaluate_moves(
-            ACTIVE_MODEL, board, temperature=temperature, device=DEVICE, engine=STOCKFISH_ENGINE
+            ACTIVE_MODEL, board, temperature=temperature, device=DEVICE, engine=STOCKFISH_ENGINE if use_sf else None, use_stockfish=use_sf
         )
         
         if best_move is None:
