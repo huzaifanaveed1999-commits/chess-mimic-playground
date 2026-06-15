@@ -1238,23 +1238,6 @@ function updateModelMetadataDisplay() {
         // Dynamic status
         document.getElementById('connection-status-dot').className = "pulse-dot active";
         document.getElementById('connection-status-text').textContent = "Model Ready";
-        
-        // If the model does not use Stockfish, display a note in the thinking drawer
-        const usesStockfish = selectedOpt.dataset.uses_stockfish === 'true';
-        if (!usesStockfish) {
-            clearThinkingProcess();
-            if (thinkingTableBody) {
-                thinkingTableBody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="empty-table-placeholder" style="color: var(--accent-cyan); font-weight: 500;">
-                            <i data-lucide="brain-circuit" style="vertical-align: middle; margin-right: 5px; width: 14px; height: 14px;"></i>
-                            Pure Policy Engine Active: Stockfish evaluation is disabled for this model.
-                        </td>
-                    </tr>
-                `;
-                lucide.createIcons();
-            }
-        }
     }
 }
 

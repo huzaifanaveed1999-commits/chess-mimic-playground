@@ -312,8 +312,6 @@ def get_models():
                 
                 # Dynamic display name and Stockfish compatibility flag
                 uses_stockfish = True
-                if f == "user_mimic_model.pth" or "user_mimic" in f:
-                    uses_stockfish = False
                 
                 display_name = f
                 if f == "chess_mimic_model.pth":
@@ -434,13 +432,8 @@ def play():
         })
         
     try:
-        # User requested: "and for this model i don't want you to have stockfish layer on it"
-        use_sf = True
-        if ACTIVE_MODEL_NAME == "user_mimic_model.pth" or "user_mimic" in ACTIVE_MODEL_NAME:
-            use_sf = False
-            
         best_move, move_evals, heatmap_data, thinking_process = evaluate_moves(
-            ACTIVE_MODEL, board, temperature=temperature, device=DEVICE, engine=STOCKFISH_ENGINE if use_sf else None, use_stockfish=use_sf
+            ACTIVE_MODEL, board, temperature=temperature, device=DEVICE, engine=STOCKFISH_ENGINE, use_stockfish=True
         )
         
         if best_move is None:
